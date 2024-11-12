@@ -1,4 +1,4 @@
-import pool from './connection.js';
+import pool from './connection.js'; // Adjust the import according to your project structure
 
 // Fetch all departments from the database
 export const getDepartments = async () => {
@@ -18,6 +18,56 @@ export const getEmployees = async () => {
   return res.rows;
 };
 
+// Fetch only managers from the database
+export const getManagers = async () => {
+  const res = await pool.query(`
+    SELECT DISTINCT e.id, e.first_name, e.last_name
+    FROM employee e
+    JOIN employee m ON e.id = m.manager_id
+  `);
+  return res.rows;
+};
+
+// Fetch detailed employee information
+export const getEmployeeDetails = async () => {
+  const query = `
+    SELECT e.id, e.first_name, e.last_name, r.title AS role_title, r.salary, d.name AS department_name, 
+           CONCAT(m.first_name, ' ', m.last_name) AS manager_name
+    FROM employee e
+    JOIN role r ON e.role_id = r.id
+    JOIN department d ON r.department_id = d.id
+    LEFT JOIN employee m ON e.manager_id = m.id
+  `;
+  const res = await pool.query(query);
+  return res.rows;
+};
+
+// Fetch detailed role information
+export const getRoleDetails = async () => {
+  const query = `
+    SELECT r.id, r.title, r.salary, d.name AS department_name
+    FROM role r
+    JOIN department d ON r.department_id = d.id
+  `;
+  const res = await pool.query(query);
+  return res.rows;
+};
+
+// Fetch employees by department ID from the database
+export const getEmployeesByDepartmentId = async (departmentId) => {
+  const query = `
+    SELECT e.id, e.first_name, e.last_name, r.title AS role_title, r.salary, d.name AS department_name, 
+           CONCAT(m.first_name, ' ', m.last_name) AS manager_name
+    FROM employee e
+    JOIN role r ON e.role_id = r.id
+    JOIN department d ON r.department_id = d.id
+    LEFT JOIN employee m ON e.manager_id = m.id
+    WHERE d.id = $1
+  `;
+  const res = await pool.query(query, [departmentId]);
+  return res.rows;
+};
+
 // Add a new department to the database
 export const addDepartment = async (name) => {
   await pool.query('INSERT INTO department (name) VALUES ($1)', [name]);
@@ -29,38 +79,56 @@ export const addRole = async (title, salary, department_id) => {
 };
 
 // Add a new employee to the database
-export const addEmployee = async ({ first_name, last_name, role_id, manager_id }) => {
+export const addEmployee = async (firstName, lastName, roleId, managerId) => {
   const query = `
     INSERT INTO employee (first_name, last_name, role_id, manager_id)
     VALUES ($1, $2, $3, $4)
+    RETURNING *;
   `;
-  const values = [first_name, last_name, role_id, manager_id];
-  await pool.query(query, values);
+  const values = [firstName, lastName, roleId, managerId];
+
+  try {
+    const res = await pool.query(query, values);
+  } catch (err) {
+    console.error("Error adding employee:", err);
+  }
 };
 
-// Update the role of an existing employee in the database
-export const updateEmployeeRole = async (employee_id, role_id) => {
-  await pool.query('UPDATE employee SET role_id = $1 WHERE id = $2', [role_id, employee_id]);
-};
-
-// Delete an employee from the database
-export const deleteEmployee = async (employee_id) => {
-  await pool.query('DELETE FROM employee WHERE id = $1', [employee_id]);
-};
-
-// Fetch all employees with a specific role ID from the database
+// Fetch employees by role ID from the database
 export const getEmployeesByRoleId = async (roleId) => {
   const res = await pool.query('SELECT * FROM employee WHERE role_id = $1', [roleId]);
   return res.rows;
 };
 
-// Delete a role from the database if it is not assigned to any employees
-export const deleteRole = async (roleId) => {
-  const employees = await getEmployeesByRoleId(roleId);
-  if (employees.length > 0) {
-    throw new Error(`Cannot delete role with ID ${roleId} because it is still assigned to employees.`);
-  }
+// Delete an employee from the database
+export const deleteEmployee = async (employeeId) => {
+  await pool.query('DELETE FROM employee WHERE id = $1', [employeeId]);
+};
 
-  const query = 'DELETE FROM role WHERE id = $1';
-  await pool.query(query, [roleId]);
+// Delete a role from the database
+export const deleteRole = async (roleId) => {
+  await pool.query('DELETE FROM role WHERE id = $1', [roleId]);
+};
+
+// Modify an employee's role and manager
+export const modifyEmployee = async (employeeId, newRoleId, newManagerId) => {
+  const query = `
+    UPDATE employee
+    SET role_id = $1, manager_id = $2
+    WHERE id = $3
+    RETURNING *;
+  `;
+  const values = [newRoleId, newManagerId, employeeId];
+
+  try {
+    const res = await pool.query(query, values);
+    return res.rows[0];
+  } catch (err) {
+    console.error("Error modifying employee:", err);
+  }
+};
+
+// Delete a department from the database
+export const deleteDepartment = async (departmentId) => {
+  await pool.query('DELETE FROM department WHERE id = $1', [departmentId]);
 };
