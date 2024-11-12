@@ -8,7 +8,13 @@ export const getDepartments = async () => {
 
 // Fetch all roles from the database
 export const getRoles = async () => {
-  const res = await pool.query('SELECT * FROM role');
+  const query = `
+    SELECT r.id, r.title, d.name AS department_name,
+           to_char(r.salary, 'FM$999,999,999.00') AS "Salary"
+    FROM role r
+    JOIN department d ON r.department_id = d.id
+  `;
+  const res = await pool.query(query);
   return res.rows;
 };
 
@@ -94,24 +100,35 @@ export const addRole = async (title, salary, department_id) => {
 };
 
 // Add a new employee to the database
-export const addEmployee = async (firstName, lastName, roleId, managerId) => {
-  const query = `
-    INSERT INTO employee (first_name, last_name, role_id, manager_id)
-    VALUES ($1, $2, $3, $4)
-    RETURNING *;
-  `;
-  const values = [firstName, lastName, roleId, managerId];
-
-  try {
-    const res = await pool.query(query, values);
-  } catch (err) {
-    console.error("Error adding employee:", err);
-  }
+export const addEmployee = async (employee) => {
+    const { first_name, last_name, role_id, manager_id } = employee;
+    const truncatedFirstName = first_name.length > 30 ? first_name.substring(0, 30) : first_name;
+    const truncatedLastName = last_name.length > 30 ? first_name.substring(0, 30) : last_name;
+    const query = `
+        INSERT INTO employee (first_name, last_name, role_id, manager_id)
+        VALUES ($1, $2, $3, $4)
+        RETURNING *;
+    `;
+    const values = [truncatedFirstName, truncatedLastName, role_id, manager_id];
+    try {
+        const res = await pool.query(query, values);
+        return res.rows[0];
+    } catch (err) {
+        console.error('Error adding employee:', err);
+        throw err;
+    }
 };
 
 // Fetch employees by role ID from the database
 export const getEmployeesByRoleId = async (roleId) => {
-  const res = await pool.query('SELECT * FROM employee WHERE role_id = $1', [roleId]);
+  const query = `
+    SELECT e.id, e.first_name, e.last_name, r.title AS role_title, d.name AS department_name
+    FROM employee e
+    JOIN role r ON e.role_id = r.id
+    JOIN department d ON r.department_id = d.id
+    WHERE e.role_id = $1
+  `;
+  const res = await pool.query(query, [roleId]);
   return res.rows;
 };
 
@@ -128,32 +145,31 @@ export const getEmployeesByManagerId = async (managerId) => {
   return res.rows;
 };
 
+// Modify an employee's details
+export const modifyEmployee = async (employeeId, updates) => {
+  const setClause = Object.keys(updates).map((key, index) => `${key} = $${index + 1}`).join(', ');
+  const values = Object.values(updates);
+  values.push(employeeId);
+
+  const query = `
+    UPDATE employee
+    SET ${setClause}
+    WHERE id = $${values.length}
+  `;
+  await pool.query(query, values);
+};
+
 // Delete an employee from the database
 export const deleteEmployee = async (employeeId) => {
+  // Set manager_id to null for employees who reference this employee as their manager
+  await pool.query('UPDATE employee SET manager_id = NULL WHERE manager_id = $1', [employeeId]);
+  // Delete the employee
   await pool.query('DELETE FROM employee WHERE id = $1', [employeeId]);
 };
 
 // Delete a role from the database
 export const deleteRole = async (roleId) => {
   await pool.query('DELETE FROM role WHERE id = $1', [roleId]);
-};
-
-// Modify an employee's role and manager
-export const modifyEmployee = async (employeeId, newRoleId, newManagerId) => {
-  const query = `
-    UPDATE employee
-    SET role_id = $1, manager_id = $2
-    WHERE id = $3
-    RETURNING *;
-  `;
-  const values = [newRoleId, newManagerId, employeeId];
-
-  try {
-    const res = await pool.query(query, values);
-    return res.rows[0];
-  } catch (err) {
-    console.error("Error modifying employee:", err);
-  }
 };
 
 // Delete a department from the database
@@ -175,4 +191,19 @@ export const getDepartmentBudget = async (departmentId) => {
   // Format the total budget
   const formattedBudget = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(totalBudget);
   return formattedBudget;
+};
+
+// Fetch all employees with a "No Manager" option
+export const getEmployeesWithNoManagerOption = async () => {
+  const query = `
+    SELECT id, CONCAT(first_name, ' ', last_name) AS name
+    FROM employee
+  `;
+  const res = await pool.query(query);
+  const employees = res.rows;
+
+  // Add "No Manager" option
+  employees.unshift({ id: null, name: 'No Manager' });
+
+  return employees;
 };
