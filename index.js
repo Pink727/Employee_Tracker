@@ -63,6 +63,9 @@ const promptUser = async () => {
         'View All Departments',
         'View All Roles',
         'View All Employees',
+        'View Employees by Manager',
+        'View Employees by Department',
+        'View Department Budget',
         'Add Department',
         'Add Role',
         'Add Employee',
@@ -70,9 +73,6 @@ const promptUser = async () => {
         'Delete Employee',
         'Delete Role',
         'Delete Department',
-        'View Employees by Manager',
-        'View Employees by Department',
-        'View Department Budget',
         'Exit'
       ]
     }
@@ -85,29 +85,49 @@ const promptUser = async () => {
       return viewAllRoles();
     case 'View All Employees':
       return viewAllEmployees();
-    case 'Add Department':
-      return addNewDepartment();
-    case 'Add Role':
-      return addNewRole();
-    case 'Add Employee':
-      return addNewEmployee();
-    case 'Update Employee Role':
-      return updateEmployeeRole();
-    case 'Delete Employee':
-      return removeEmployee();
-    case 'Delete Role':
-      return removeRole();
-    case 'Delete Department':
-      return removeDepartment();
     case 'View Employees by Manager':
       return viewEmployeesByManager();
     case 'View Employees by Department':
       return viewEmployeesByDepartment();
     case 'View Department Budget':
       return viewDepartmentBudget();
+    case 'Add Department':
+      if (await confirmAction('Are you sure you want to add a new department?')) {
+        return addNewDepartment();
+      }
+      break;
+    case 'Add Role':
+      if (await confirmAction('Are you sure you want to add a new role?')) {
+        return addNewRole();
+      }
+      break;
+    case 'Add Employee':
+      if (await confirmAction('Are you sure you want to add a new employee?')) {
+        return addNewEmployee();
+      }
+      break;
+    case 'Update Employee Role':
+      return updateEmployeeRole();
+    case 'Delete Employee':
+      if (await confirmAction('Are you sure you want to delete an employee?')) {
+        return removeEmployee();
+      }
+      break;
+    case 'Delete Role':
+      if (await confirmAction('Are you sure you want to delete a role?')) {
+        return removeRole();
+      }
+      break;
+    case 'Delete Department':
+      if (await confirmAction('Are you sure you want to delete a department?')) {
+        return removeDepartment();
+      }
+      break;
     case 'Exit':
-      return process.exit();
+      console.log('Goodbye!');
+      process.exit();
   }
+  promptUser();
 };
 
 /**
@@ -133,7 +153,15 @@ const viewAllRoles = async () => {
  */
 const viewAllEmployees = async () => {
   const employees = await getEmployees();
-  console.table(employees);
+  console.table(employees.map(employee => ({
+    ID: employee.id,
+    'First Name': employee.first_name,
+    'Last Name': employee.last_name,
+    Role: employee.role_title,
+    Department: employee.department_name,
+    Manager: employee.manager_name || 'None',
+    Salary: new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(employee.salary)
+  })));
   promptUser();
 };
 
@@ -231,28 +259,34 @@ const addNewEmployee = async () => {
 const updateEmployeeRole = async () => {
   const employees = await getEmployees();
   const roles = await getRoles();
-  const { employee_id, role_id } = await inquirer.prompt([
+
+  const { employeeId, roleId, managerId } = await inquirer.prompt([
     {
       type: 'list',
-      name: 'employee_id',
-      message: 'Select the employee to update:',
-      choices: employees.map(employee => ({
-        name: `${employee.first_name} ${employee.last_name}`,
-        value: employee.id
-      }))
+      name: 'employeeId',
+      message: 'Select the employee whose role you want to update:',
+      choices: employees.map(employee => ({ name: `${employee.first_name} ${employee.last_name}`, value: employee.id }))
     },
     {
       type: 'list',
-      name: 'role_id',
-      message: 'Select the new role for the employee:',
-      choices: roles.map(role => ({
-        name: role.title,
-        value: role.id
-      }))
+      name: 'roleId',
+      message: 'Select the new role for the employee (or leave unchanged):',
+      choices: [{ name: 'Unchanged', value: null }, ...roles.map(role => ({ name: role.title, value: role.id }))]
+    },
+    {
+      type: 'list',
+      name: 'managerId',
+      message: 'Select the new manager for the employee (or leave unchanged):',
+      choices: [{ name: 'Unchanged', value: null }, ...employees.map(manager => ({ name: `${manager.first_name} ${manager.last_name}`, value: manager.id }))]
     }
   ]);
-  await modifyEmployee(employee_id, { role_id });
-  console.log(`Updated employee's role`);
+
+  const employee = employees.find(emp => emp.id === employeeId);
+  const newRoleId = roleId !== null ? roleId : employee.role_id;
+  const newManagerId = managerId !== null ? managerId : employee.manager_id;
+
+  await modifyEmployee(employeeId, newRoleId, newManagerId);
+  console.log('Employee role and manager updated successfully.');
   promptUser();
 };
 
@@ -324,10 +358,10 @@ const removeDepartment = async () => {
  */
 const viewEmployeesByManager = async () => {
   const managers = await getManagers();
-  const { manager_id } = await inquirer.prompt([
+  const { managerId } = await inquirer.prompt([
     {
       type: 'list',
-      name: 'manager_id',
+      name: 'managerId',
       message: 'Select the manager to view employees:',
       choices: managers.map(manager => ({
         name: `${manager.first_name} ${manager.last_name}`,
@@ -335,8 +369,16 @@ const viewEmployeesByManager = async () => {
       }))
     }
   ]);
-  const employees = await getEmployeesByManagerId(manager_id);
-  console.table(employees);
+
+  const employees = await getEmployeesByManagerId(managerId);
+  console.table(employees.map(employee => ({
+    ID: employee.id,
+    'First Name': employee.first_name,
+    'Last Name': employee.last_name,
+    Role: employee.role_title,
+    Department: employee.department_name,
+    Salary: new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(employee.salary)
+  })));
   promptUser();
 };
 
@@ -380,6 +422,23 @@ const viewDepartmentBudget = async () => {
   const budget = await getDepartmentBudget(department_id);
   console.log(`Total utilized budget for department: ${budget}`);
   promptUser();
+};
+
+/**
+ * Prompts the user to confirm an action.
+ * @param {string} message - The confirmation message to display.
+ * @returns {Promise<boolean>} - A promise that resolves to the user's confirmation (true or false).
+ */
+const confirmAction = async (message) => {
+  const { confirm } = await inquirer.prompt([
+    {
+      type: 'confirm',
+      name: 'confirm',
+      message: message,
+      default: false
+    }
+  ]);
+  return confirm;
 };
 
 // Start the application
