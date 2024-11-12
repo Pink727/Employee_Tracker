@@ -50,7 +50,14 @@ export const getRoleDetails = async () => {
     JOIN department d ON r.department_id = d.id
   `;
   const res = await pool.query(query);
-  return res.rows;
+
+  // Format the salary for each role
+  const roleDetails = res.rows.map(role => ({
+    ...role,
+    salary: new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(role.salary)
+  }));
+
+  return roleDetails;
 };
 
 // Fetch employees by department ID from the database
@@ -100,6 +107,19 @@ export const getEmployeesByRoleId = async (roleId) => {
   return res.rows;
 };
 
+// Fetch employees by manager ID from the database
+export const getEmployeesByManagerId = async (managerId) => {
+  const query = `
+    SELECT e.id, e.first_name, e.last_name, r.title AS role_title, r.salary, d.name AS department_name
+    FROM employee e
+    JOIN role r ON e.role_id = r.id
+    JOIN department d ON r.department_id = d.id
+    WHERE e.manager_id = $1
+  `;
+  const res = await pool.query(query, [managerId]);
+  return res.rows;
+};
+
 // Delete an employee from the database
 export const deleteEmployee = async (employeeId) => {
   await pool.query('DELETE FROM employee WHERE id = $1', [employeeId]);
@@ -131,4 +151,20 @@ export const modifyEmployee = async (employeeId, newRoleId, newManagerId) => {
 // Delete a department from the database
 export const deleteDepartment = async (departmentId) => {
   await pool.query('DELETE FROM department WHERE id = $1', [departmentId]);
+};
+
+// Fetch the total budget of a department
+export const getDepartmentBudget = async (departmentId) => {
+  const query = `
+    SELECT SUM(r.salary) AS total_budget
+    FROM employee e
+    JOIN role r ON e.role_id = r.id
+    WHERE r.department_id = $1
+  `;
+  const res = await pool.query(query, [departmentId]);
+  const totalBudget = res.rows[0].total_budget;
+
+  // Format the total budget
+  const formattedBudget = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(totalBudget);
+  return formattedBudget;
 };
