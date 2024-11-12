@@ -1,5 +1,5 @@
 import inquirer from 'inquirer';
-import { getDepartments, getRoles, getEmployees, addDepartment, addRole, addEmployee, deleteEmployee, deleteRole, getManagers, modifyEmployee, getEmployeeDetails, getRoleDetails, getEmployeesByDepartmentId, deleteDepartment, getEmployeesByManagerId, getDepartmentBudget } from './src/queries.js';
+import { getDepartments, getRoles, getEmployees, addDepartment, addRole, addEmployee, deleteEmployee, deleteRole, getManagers, modifyEmployee, getEmployeeDetails, getRoleDetails, getEmployeesByDepartmentId, deleteDepartment, getEmployeesByManagerId, getDepartmentBudget, getEmployeesWithNoManagerOption, getEmployeesByRoleId } from './src/queries.js';
 
 /**
  * Displays a welcome message to the console.
@@ -114,10 +114,7 @@ const promptUser = async () => {
       }
       break;
     case 'Delete Role':
-      if (await confirmAction('Are you sure you want to delete a role?')) {
-        return removeRole();
-      }
-      break;
+      return deleteRoleWithCheck();
     case 'Delete Department':
       if (await confirmAction('Are you sure you want to delete a department?')) {
         return removeDepartment();
@@ -144,7 +141,12 @@ const viewAllDepartments = async () => {
  */
 const viewAllRoles = async () => {
   const roles = await getRoles();
-  console.table(roles);
+  console.table(roles.map(role => ({
+    ID: role.id,
+    Title: role.title,
+    Department: role.department_name,
+    Salary: role.Salary
+  })));
   promptUser();
 };
 
@@ -216,40 +218,42 @@ const addNewRole = async () => {
  * Prompts the user to enter details for a new employee and adds them to the database.
  */
 const addNewEmployee = async () => {
+  const employees = await getEmployeesWithNoManagerOption();
   const roles = await getRoles();
-  const managers = await getManagers();
-  const { first_name, last_name, role_id, manager_id } = await inquirer.prompt([
+
+  const answers = await inquirer.prompt([
     {
       type: 'input',
       name: 'first_name',
-      message: 'Enter the first name of the new employee:'
+      message: 'Enter the first name of the new employee:',
     },
     {
       type: 'input',
       name: 'last_name',
-      message: 'Enter the last name of the new employee:'
+      message: 'Enter the last name of the new employee:',
     },
     {
       type: 'list',
       name: 'role_id',
       message: 'Select the role for the new employee:',
       choices: roles.map(role => ({
-        name: role.title,
-        value: role.id
-      }))
+        name: `${role.title} (${role.department_name}) - ${role.formatted_salary}`,
+        value: role.id,
+      })),
     },
     {
       type: 'list',
       name: 'manager_id',
       message: 'Select the manager for the new employee:',
-      choices: managers.map(manager => ({
-        name: `${manager.first_name} ${manager.last_name}`,
-        value: manager.id
-      }))
-    }
+      choices: employees.map(employee => ({
+        name: employee.name,
+        value: employee.id,
+      })),
+    },
   ]);
-  await addEmployee({ first_name, last_name, role_id, manager_id });
-  console.log(`Added new employee: ${first_name} ${last_name}`);
+
+  await addEmployee(answers);
+  console.log(`Added new employee: ${answers.first_name} ${answers.last_name}`);
   promptUser();
 };
 
@@ -260,33 +264,59 @@ const updateEmployeeRole = async () => {
   const employees = await getEmployees();
   const roles = await getRoles();
 
-  const { employeeId, roleId, managerId } = await inquirer.prompt([
+  const { employeeId } = await inquirer.prompt([
     {
       type: 'list',
       name: 'employeeId',
-      message: 'Select the employee whose role you want to update:',
-      choices: employees.map(employee => ({ name: `${employee.first_name} ${employee.last_name}`, value: employee.id }))
+      message: 'Select the employee to update:',
+      choices: employees.map(employee => ({
+        name: `${employee.first_name} ${employee.last_name}`,
+        value: employee.id,
+      })),
     },
+  ]);
+
+  const { roleId } = await inquirer.prompt([
     {
       type: 'list',
       name: 'roleId',
       message: 'Select the new role for the employee (or leave unchanged):',
-      choices: [{ name: 'Unchanged', value: null }, ...roles.map(role => ({ name: role.title, value: role.id }))]
+      choices: [
+        { name: 'Unchanged', value: null },
+        ...roles.map(role => ({
+          name: `${role.title} (${role.department_name}) - ${role.Salary}`,
+          value: role.id,
+        })),
+      ],
     },
+  ]);
+
+  const { managerId } = await inquirer.prompt([
     {
       type: 'list',
       name: 'managerId',
       message: 'Select the new manager for the employee (or leave unchanged):',
-      choices: [{ name: 'Unchanged', value: null }, ...employees.map(manager => ({ name: `${manager.first_name} ${manager.last_name}`, value: manager.id }))]
-    }
+      choices: [
+        { name: 'Unchanged', value: null },
+        ...employees.map(employee => ({
+          name: `${employee.first_name} ${employee.last_name}`,
+          value: employee.id,
+        })),
+      ],
+    },
   ]);
 
-  const employee = employees.find(emp => emp.id === employeeId);
-  const newRoleId = roleId !== null ? roleId : employee.role_id;
-  const newManagerId = managerId !== null ? managerId : employee.manager_id;
+  const updates = {};
+  if (roleId !== null) updates.role_id = roleId;
+  if (managerId !== null) updates.manager_id = managerId;
 
-  await modifyEmployee(employeeId, newRoleId, newManagerId);
-  console.log('Employee role and manager updated successfully.');
+  if (Object.keys(updates).length > 0) {
+    await modifyEmployee(employeeId, updates);
+    console.log('Employee updated successfully.');
+  } else {
+    console.log('No changes made to the employee.');
+  }
+
   promptUser();
 };
 
@@ -439,6 +469,72 @@ const confirmAction = async (message) => {
     }
   ]);
   return confirm;
+};
+
+/**
+ * Prompts the user to select a role and removes it from the database, with checks for associated employees.
+ */
+const deleteRoleWithCheck = async () => {
+  const roles = await getRoles();
+
+  const { roleId } = await inquirer.prompt([
+    {
+      type: 'list',
+      name: 'roleId',
+      message: 'Select the role to remove:',
+      choices: roles.map(role => ({
+        name: `${role.title} (${role.department_name}) - ${role.Salary}`,
+        value: role.id,
+      })),
+    },
+  ]);
+
+  const employees = await getEmployeesByRoleId(roleId);
+
+  if (employees.length > 0) {
+    console.log('The following employees are associated with this role:');
+    console.table(employees);
+
+    const { action } = await inquirer.prompt([
+      {
+        type: 'list',
+        name: 'action',
+        message: 'What would you like to do?',
+        choices: [
+          'Modify Employee Roles',
+          'Delete Employees',
+          'Cancel'
+        ],
+      },
+    ]);
+
+    if (action === 'Modify Employee Roles') {
+      for (const employee of employees) {
+        const { newRoleId } = await inquirer.prompt([
+          {
+            type: 'list',
+            name: 'newRoleId',
+            message: `Select a new role for ${employee.first_name} ${employee.last_name}:`,
+            choices: roles.map(role => ({
+              name: `${role.title} (${role.department_name}) - ${role.Salary}`,
+              value: role.id,
+            })),
+          },
+        ]);
+        await modifyEmployee(employee.id, { role_id: newRoleId });
+      }
+    } else if (action === 'Delete Employees') {
+      for (const employee of employees) {
+        await deleteEmployee(employee.id);
+      }
+    } else {
+      return;
+    }
+  }
+
+  await deleteRole(roleId);
+  console.log('Role deleted successfully.');
+  promptUser();
 };
 
 // Start the application
