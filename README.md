@@ -52,7 +52,7 @@ npm start
 Follow the prompts in the command-line interface to perform various operations.
 
 ## Video
-[Watch the video demonstration](https://link-to-your-video.com)
+[Watch the video demonstration](https://youtu.be/SPvWyl2frV4)
 
 ## License
 This project is licensed under the [MIT License](https://opensource.org/license/mit).
