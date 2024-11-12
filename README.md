@@ -21,7 +21,7 @@ This project is an Employee Management System that allows users to view and mana
 ## Installation
 1. Clone the repository:
     ```sh
-    git clone https://github.com/yourusername/Employee_Tracker.git
+    git clone https://github.com/Pink727/Employee_Tracker.git
     ```
 2. Navigate to the project directory:
     ```sh
