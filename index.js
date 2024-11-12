@@ -1,5 +1,5 @@
 import inquirer from 'inquirer';
-import { getDepartments, getRoles, getEmployees, addDepartment, addRole, addEmployee, deleteEmployee, deleteRole, getManagers, modifyEmployee, getEmployeeDetails, getRoleDetails, getEmployeesByDepartmentId, deleteDepartment } from './src/queries.js';
+import { getDepartments, getRoles, getEmployees, addDepartment, addRole, addEmployee, deleteEmployee, deleteRole, getManagers, modifyEmployee, getEmployeeDetails, getRoleDetails, getEmployeesByDepartmentId, deleteDepartment, getEmployeesByManagerId, getDepartmentBudget } from './src/queries.js';
 
 const displayWelcomeMessage = () => {
   console.log(`
@@ -289,6 +289,54 @@ const deleteARole = async () => {
   }
 };
 
+const displayEmployeesByManager = async () => {
+  const managers = await getManagers();
+  const managerChoices = managers.map(manager => ({
+    name: `${manager.first_name} ${manager.last_name}`,
+    value: manager.id
+  }));
+  managerChoices.unshift({ name: 'Cancel', value: null });
+
+  const { managerId } = await inquirer.prompt({
+    name: 'managerId',
+    type: 'list',
+    message: 'Select the manager:',
+    choices: managerChoices
+  });
+
+  if (managerId === null) {
+    console.log('Operation canceled.');
+    return;
+  }
+
+  const employeeDetails = await getEmployeesByManagerId(managerId);
+  console.table(employeeDetails);
+};
+
+const displayDepartmentBudget = async () => {
+  const departments = await getDepartments();
+  const departmentChoices = departments.map(dept => ({
+    name: dept.name,
+    value: dept.id
+  }));
+  departmentChoices.unshift({ name: 'Cancel', value: null });
+
+  const { departmentId } = await inquirer.prompt({
+    name: 'departmentId',
+    type: 'list',
+    message: 'Select the department:',
+    choices: departmentChoices
+  });
+
+  if (departmentId === null) {
+    console.log('Operation canceled.');
+    return;
+  }
+
+  const totalBudget = await getDepartmentBudget(departmentId);
+  console.log(`Total Utilized Budget: ${totalBudget}`);
+};
+
 const mainMenu = async () => {
   const { action } = await inquirer.prompt({
     name: 'action',
@@ -299,6 +347,8 @@ const mainMenu = async () => {
       'View all roles',
       'View all employees',
       'View employees by department',
+      'View employees by manager',
+      'View department budget',
       'Add a department',
       'Add a role',
       'Add an employee',
@@ -322,6 +372,12 @@ const mainMenu = async () => {
       break;
     case 'View employees by department':
       await displayEmployeesByDepartment();
+      break;
+    case 'View employees by manager':
+      await displayEmployeesByManager();
+      break;
+    case 'View department budget':
+      await displayDepartmentBudget();
       break;
     case 'Add a department':
       await addNewDepartment();
